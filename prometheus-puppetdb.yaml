@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus-puppetdb
+  labels:
+    app: prometheus-puppetdb
+spec:
+  selector:
+    matchLabels:
+      app: prometheus-puppetdb
+  template:
+    metadata:
+      labels:
+        app: prometheus-puppetdb
+    spec:
+      containers:
+        - image: camptocamp/prometheus-puppetdb:k8s-service
+          name: prometheus-puppetdb
+          imagePullPolicy: Always
+          env:
+            - name: PROMETHEUS_PUPPETDB_URL
+              value: "https://puppetdb.camptocamp.com:8081/pdb/query"
+            - name: BIVAC_VERBOSE
+              value: "true"
+            - name: RCLONE_LOG_LEVEL
+              value: "ERROR"
+            - name: RCLONE_CONFIG_SCW_ACCESS_KEY_ID
+              value: "SCWDCZ9EAXAAS3KMP1FZ"
+            - name: RCLONE_CONFIG_SCW_SECRET_ACCESS_KEY
+              value: "88f58fcf-baff-453f-9d24-8fb52aa21b1f"
+            - name: RCLONE_CONFIG_SCW_TYPE
+              value: "s3"
+            - name: RCLONE_CONFIG_SCW_REGION
+              value: "nl-ams"
+            - name: RCLONE_CONFIG_SCW_ENDPOINT
+              value: "s3.nl-ams.scw.cloud"
+            - name: RCLONE_CONFIG_SCW_ACL
+              value: "private"
+            - name: RESTIC_PASSWORD
+              value: "MROo0XPhGpRUwRXj6N12CJIAQ3cwNA"
+            - name: BIVAC_ORCHESTRATOR
+              value: "kubernetes"
+            - name: KUBERNETES_ALL_NAMESPACES
+              value: "false"
+            - name: BIVAC_SERVER_PSK
+              value: "MPC3v3xohO2TegsuyH6ObGDKO7kIta"
+            - name: BIVAC_VERBOSE
+              value: "true"
+            - name: BIVAC_PROVIDERS_CONFIG
+              value: "/etc/bivac/providers-config.toml"
+            - name: BIVAC_AGENT_IMAGE
+              value: "camptocamp/bivac:2.1-dev"
+

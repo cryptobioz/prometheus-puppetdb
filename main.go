@@ -19,6 +19,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	//"k8s.io/client-go/rest"
+	monitoringV1 "github.com/coreos/prometheus-operator/pkg/apis/monitoring/v1"
+	coreOSMonitoring "github.com/coreos/prometheus-operator/pkg/client/versioned"
 	"k8s.io/client-go/tools/clientcmd"
 
 	yaml "gopkg.in/yaml.v1"
@@ -300,6 +302,10 @@ func main() {
 		if err != nil {
 			panic(err.Error())
 		}
+		monitoringClientset, err := coreOSMonitoring.NewForConfig(config)
+		if err != nil {
+			panic(err.Error())
+		}
 
 		// get the namespace
 		kubeconfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
@@ -327,10 +333,16 @@ func main() {
 			//	return
 			//}
 
+			endpoints := []monitoringV1.Endpoint{}
+
 			for _, target := range targets {
 				splittedTarget := strings.Split(target.Targets[0], ":")
 				address := splittedTarget[0]
 				port := 80
+				if target.Labels["scheme"] == "https" {
+					port = 443
+				}
+
 				if len(splittedTarget) > 1 {
 					port, _ = strconv.Atoi(splittedTarget[1])
 				}
@@ -352,7 +364,7 @@ func main() {
 							},
 							Ports: []v1.EndpointPort{
 								{
-									Name:     "metrics",
+									Name:     name,
 									Port:     int32(port),
 									Protocol: "TCP",
 								},
@@ -381,7 +393,7 @@ func main() {
 						ClusterIP:    "",
 						Ports: []v1.ServicePort{
 							{
-								Name:     "metrics",
+								Name:     name,
 								Port:     int32(port),
 								Protocol: v1.ProtocolTCP,
 							},
@@ -391,7 +403,37 @@ func main() {
 				if err != nil {
 					log.Errorf("Unable to create Service: %v", err)
 				}
+				endpoint := monitoringV1.Endpoint{
+					Port:   name,
+					Scheme: target.Labels["scheme"],
+					Path:   target.Labels["metrics_path"],
+				}
+				endpoints = append(endpoints, endpoint)
+			}
 
+			_, err = monitoringClientset.MonitoringV1().ServiceMonitors(namespace).Create(&monitoringV1.ServiceMonitor{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "ServiceMonitor",
+					APIVersion: "monitoring.coreos.com/v1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "prometheus-puppetdb",
+					Labels: map[string]string{
+						"app":  "prometheus-puppetdb",
+						"team": "frontend",
+					},
+				},
+				Spec: monitoringV1.ServiceMonitorSpec{
+					Selector: metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"app": "prometheus-puppetdb",
+						},
+					},
+					Endpoints: endpoints,
+				},
+			})
+			if err != nil {
+				log.Errorf("Unable to create ServiceMonitor: %v", err)
 			}
 
 			log.Infof("Sleeping for %v", cfg.Sleep)
