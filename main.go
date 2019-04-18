@@ -11,13 +11,14 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
+	//"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
 	yaml "gopkg.in/yaml.v1"
@@ -110,7 +111,7 @@ func getNodes(client *http.Client, puppetdb string, query string) (nodes []Node,
 	return
 }
 
-func getTargets() (c []byte, err error) {
+func getTargets() (targets []StaticConfig, err error) {
 	fileSdConfig := []StaticConfig{}
 
 	nodes, err := getNodes(client, cfg.PuppetDBURL, cfg.Query)
@@ -156,11 +157,7 @@ func getTargets() (c []byte, err error) {
 			}
 		}
 	}
-	c, err = yaml.Marshal(&fileSdConfig)
-	if err != nil {
-		return
-	}
-
+	targets = fileSdConfig
 	return
 }
 
@@ -258,19 +255,28 @@ func init() {
 
 func main() {
 	if cfg.Output == "stdout" {
-		c, err := getTargets()
+		targets, err := getTargets()
 		if err != nil {
 			log.Fatalf("failed to get exporters: %v", err)
 		}
+		c, err := yaml.Marshal(&targets)
+		if err != nil {
+			return
+		}
+
 		fmt.Printf("%s", string(c))
 	}
 	if cfg.Output == "file" {
 		os.MkdirAll(filepath.Dir(cfg.File), 0755)
 		for {
-			c, err := getTargets()
+			targets, err := getTargets()
 			if err != nil {
 				log.Errorf("failed to get exporters: %v", err)
 				break
+			}
+			c, err := yaml.Marshal(&targets)
+			if err != nil {
+				return
 			}
 
 			err = ioutil.WriteFile(cfg.File, c, 0644)
@@ -282,9 +288,121 @@ func main() {
 			time.Sleep(cfg.Sleep)
 		}
 	}
+	if cfg.Output == "external-services" {
+		// creates the in-cluster config
+		//config, err := rest.InClusterConfig()
+		config, err := clientcmd.BuildConfigFromFlags("", "/home/ldepriester/.kube/config")
+		if err != nil {
+			panic(err.Error())
+		}
+		// creates the clientset
+		clientset, err := kubernetes.NewForConfig(config)
+		if err != nil {
+			panic(err.Error())
+		}
+
+		// get the namespace
+		kubeconfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+			clientcmd.NewDefaultClientConfigLoadingRules(),
+			&clientcmd.ConfigOverrides{},
+		)
+		namespace, _, err := kubeconfig.Namespace()
+		if err != nil {
+			log.Errorf("Failed to get namespace: %v", err)
+			namespace = cfg.NameSpace
+			log.Warnf("Get namespace from configuration: %s", namespace)
+		}
+
+		for {
+			targets, err := getTargets()
+			if err != nil {
+				log.Errorf("failed to get exporters: %v", err)
+				log.Infof("Sleeping for %v", cfg.Sleep)
+				time.Sleep(cfg.Sleep)
+				continue
+			}
+
+			//c, err = yaml.Marshal(&targets)
+			//if err != nil {
+			//	return
+			//}
+
+			for _, target := range targets {
+				splittedTarget := strings.Split(target.Targets[0], ":")
+				address := splittedTarget[0]
+				port := 80
+				if len(splittedTarget) > 1 {
+					port, _ = strconv.Atoi(splittedTarget[1])
+				}
+				name := "puppetdb-" + strings.Replace(address, ".", "-", -1)
+				_, err := clientset.CoreV1().Endpoints(namespace).Create(&v1.Endpoints{
+					TypeMeta: metav1.TypeMeta{
+						Kind:       "Endpoints",
+						APIVersion: "v1",
+					},
+					ObjectMeta: metav1.ObjectMeta{
+						Name: name,
+					},
+					Subsets: []v1.EndpointSubset{
+						{
+							Addresses: []v1.EndpointAddress{
+								{
+									IP: address,
+								},
+							},
+							Ports: []v1.EndpointPort{
+								{
+									Name:     "metrics",
+									Port:     int32(port),
+									Protocol: "TCP",
+								},
+							},
+						},
+					},
+				})
+				if err != nil {
+					log.Errorf("Unable to create Endpoint: %v", err)
+				}
+
+				_, err = clientset.CoreV1().Services(namespace).Create(&v1.Service{
+					TypeMeta: metav1.TypeMeta{
+						Kind:       "Service",
+						APIVersion: "v1",
+					},
+					ObjectMeta: metav1.ObjectMeta{
+						Name: name,
+						Labels: map[string]string{
+							"app": "prometheus-puppetdb",
+						},
+					},
+					Spec: v1.ServiceSpec{
+						Type:         v1.ServiceTypeExternalName,
+						ExternalName: address,
+						ClusterIP:    "",
+						Ports: []v1.ServicePort{
+							{
+								Name:     "metrics",
+								Port:     int32(port),
+								Protocol: v1.ProtocolTCP,
+							},
+						},
+					},
+				})
+				if err != nil {
+					log.Errorf("Unable to create Service: %v", err)
+				}
+
+			}
+
+			log.Infof("Sleeping for %v", cfg.Sleep)
+			time.Sleep(cfg.Sleep)
+		}
+
+	}
 	if cfg.Output == "configmap" {
 		// creates the in-cluster config
-		config, err := rest.InClusterConfig()
+		//config, err := rest.InClusterConfig()
+		config, err := clientcmd.BuildConfigFromFlags("", "/home/ldepriester/.kube/config")
 		if err != nil {
 			panic(err.Error())
 		}
@@ -327,12 +445,16 @@ func main() {
 		}
 
 		for {
-			c, err := getTargets()
+			targets, err := getTargets()
 			if err != nil {
 				log.Errorf("failed to get exporters: %v", err)
 				log.Infof("Sleeping for %v", cfg.Sleep)
 				time.Sleep(cfg.Sleep)
 				continue
+			}
+			c, err := yaml.Marshal(&targets)
+			if err != nil {
+				return
 			}
 
 			configMap := &v1.ConfigMap{
