@@ -24,10 +24,8 @@ require (
 	github.com/sirupsen/logrus v1.3.0
 	github.com/spf13/pflag v1.0.3 // indirect
 	github.com/stretchr/testify v1.3.0 // indirect
-	golang.org/x/crypto v0.0.0-20190131182504-b8fe1690c613 // indirect
-	golang.org/x/net v0.0.0-20190125091013-d26f9f9a57f3 // indirect
+	golang.org/x/lint v0.0.0-20190409202823-959b441ac422 // indirect
 	golang.org/x/oauth2 v0.0.0-20190130055435-99b60b757ec1 // indirect
-	golang.org/x/sys v0.0.0-20190204103248-980327fe3c65 // indirect
 	golang.org/x/time v0.0.0-20181108054448-85acf8d2951c // indirect
 	gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect

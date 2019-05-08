@@ -15,12 +15,12 @@ import (
 	"strings"
 	"time"
 
+	monitoringV1 "github.com/coreos/prometheus-operator/pkg/apis/monitoring/v1"
+	coreOSMonitoring "github.com/coreos/prometheus-operator/pkg/client/versioned"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	//"k8s.io/client-go/rest"
-	monitoringV1 "github.com/coreos/prometheus-operator/pkg/apis/monitoring/v1"
-	coreOSMonitoring "github.com/coreos/prometheus-operator/pkg/client/versioned"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
 	yaml "gopkg.in/yaml.v1"
@@ -292,8 +292,8 @@ func main() {
 	}
 	if cfg.Output == "external-services" {
 		// creates the in-cluster config
-		//config, err := rest.InClusterConfig()
-		config, err := clientcmd.BuildConfigFromFlags("", "/home/ldepriester/.kube/config")
+		config, err := rest.InClusterConfig()
+		//config, err := clientcmd.BuildConfigFromFlags("", "/home/ldepriester/.kube/config")
 		if err != nil {
 			panic(err.Error())
 		}
@@ -327,11 +327,6 @@ func main() {
 				time.Sleep(cfg.Sleep)
 				continue
 			}
-
-			//c, err = yaml.Marshal(&targets)
-			//if err != nil {
-			//	return
-			//}
 
 			endpoints := []monitoringV1.Endpoint{}
 
@@ -384,7 +379,7 @@ func main() {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: name,
 						Labels: map[string]string{
-							"app": "prometheus-puppetdb",
+							"prometheus": "prometheus",
 						},
 					},
 					Spec: v1.ServiceSpec{
@@ -419,8 +414,7 @@ func main() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "prometheus-puppetdb",
 					Labels: map[string]string{
-						"app":  "prometheus-puppetdb",
-						"team": "frontend",
+						"prometheus": "prometheus",
 					},
 				},
 				Spec: monitoringV1.ServiceMonitorSpec{
